@@ -28,6 +28,7 @@ const (
     	repeat
     FROM scheduler 
     WHERE date >= $1
+	ORDER BY date ASC
 	LIMIT $2
 	`
 
@@ -53,6 +54,7 @@ const (
     	repeat
 	FROM scheduler 
 	WHERE date = $1
+	ORDER BY date ASC
 	LIMIT $2
 	`
 

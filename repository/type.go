@@ -6,7 +6,7 @@ import (
 	"github.com/Andrik-Papian/go_final_project/model"
 )
 
-type Task interface {
+type TaskRepository interface {
 	CreateTask(task *model.Task) (int64, error)
 	GetTasks() (model.TasksResp, error)
 	GetTasksBySearchString(searchString string) (model.TasksResp, error)
