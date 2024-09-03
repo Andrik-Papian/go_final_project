@@ -1,6 +1,149 @@
 package api
 
 import (
+	"encoding/json"
+	"net/http"
+	"time"
+
+	"github.com/Andrik-Papian/go_final_project/model"
+	"github.com/Andrik-Papian/go_final_project/usecases"
+)
+
+type TaskHandler struct {
+	uc *usecases.TaskUsecase
+}
+
+func NewTaskHandler(uc *usecases.TaskUsecase) TaskHandler {
+	return TaskHandler{uc: uc}
+}
+
+func (h *TaskHandler) CreateTask(w http.ResponseWriter, r *http.Request) {
+	var task model.Task
+	if err := json.NewDecoder(r.Body).Decode(&task); err != nil {
+		http.Error(w, "Invalid input", http.StatusBadRequest)
+		return
+	}
+
+	pastDay := false
+	if task.Date != "" {
+		if date, err := time.Parse(model.TimeFormat, task.Date); err == nil && date.Before(time.Now()) {
+			pastDay = true
+		}
+	}
+
+	resp, err := h.uc.CreateTask(&task, pastDay)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusCreated)
+	json.NewEncoder(w).Encode(resp)
+}
+
+func (h *TaskHandler) GetTasks(w http.ResponseWriter, r *http.Request) {
+	searchString := r.URL.Query().Get("search")
+
+	tasksResp, err := h.uc.GetTasks(searchString)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(tasksResp)
+}
+
+func (h *TaskHandler) GetTaskById(w http.ResponseWriter, r *http.Request) {
+	id := r.URL.Query().Get("id")
+
+	task, err := h.uc.GetTaskById(id)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	if task == nil {
+		http.NotFound(w, r)
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(task)
+}
+
+func (h *TaskHandler) UpdateTask(w http.ResponseWriter, r *http.Request) {
+	var task model.Task
+	if err := json.NewDecoder(r.Body).Decode(&task); err != nil {
+		http.Error(w, "Invalid input", http.StatusBadRequest)
+		return
+	}
+
+	pastDay := false
+	if task.Date != "" {
+		if date, err := time.Parse(model.TimeFormat, task.Date); err == nil && date.Before(time.Now()) {
+			pastDay = true
+		}
+	}
+
+	if err := h.uc.UpdateTask(&task, pastDay); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+}
+
+func (h *TaskHandler) MakeTaskDone(w http.ResponseWriter, r *http.Request) {
+	id := r.URL.Query().Get("id")
+
+	if err := h.uc.MakeTaskDone(id); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+}
+
+func (h *TaskHandler) DeleteTask(w http.ResponseWriter, r *http.Request) {
+	id := r.URL.Query().Get("id")
+
+	if err := h.uc.DeleteTask(id); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// GetNextDate godoc
+// @Summary Get the next occurrence date of a task
+// @Description Get the next occurrence date of a task based on the current date and repeat pattern
+// @Tags tasks
+// @Accept  json
+// @Produce  json
+// @Param date query string true "Date in the format YYYY-MM-DD"
+// @Param repeat query string true "Repeat pattern"
+// @Success 200 {string} string "Next date in format YYYY-MM-DD"
+// @Failure 400 {object} ErrorResponse
+// @Router /api/nextdate [get]
+func (h *TaskHandler) GetNextDate(w http.ResponseWriter, r *http.Request) {
+	date := r.URL.Query().Get("date")
+	repeat := r.URL.Query().Get("repeat")
+
+	nextDate, err := h.uc.GetNextDate(time.Now(), date, repeat)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.Write([]byte(nextDate))
+}
+
+/*package api
+
+import (
 	"bytes"
 	"encoding/json"
 	"fmt"
@@ -40,16 +183,17 @@ func (h *TaskHandler) GetNextDate(w http.ResponseWriter, r *http.Request) {
 	nextDate, err := h.uc.GetNextDate(nowTime, date, repeat)
 	if err != nil {
 		log.Errorf("Failed to get next date. Error: %+v", err)
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		// Отправить клиенту пустой ответ
+		http.Error(w, "", http.StatusInternalServerError)
 		return
 	}
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	_, err = w.Write([]byte(nextDate))
-	if err != nil {
+
+	// Запись в лог, если Write вернет ошибку
+	if _, err = w.Write([]byte(nextDate)); err != nil {
 		log.Errorf("Failed to write response. Error: %+v", err)
-		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
 }
 
@@ -128,14 +272,10 @@ func (h *TaskHandler) CreateTask(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
-	_, err = w.Write(resp)
-	if err != nil {
-		log.Errorf("http.CreateTask: %+v", err)
 
-		errResp := errResponse{
-			Error: err.Error(),
-		}
-		returnErr(http.StatusInternalServerError, errResp, w)
+	// Запись в лог, если Write вернет ошибку
+	if _, err = w.Write(resp); err != nil {
+		log.Errorf("http.CreateTask: %+v", err)
 	}
 }
 
@@ -282,6 +422,7 @@ func (h *TaskHandler) UpdateTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Проверка запроса
 	dateTaskNow := time.Now().Format(model.TimeFormat)
 	err = checkTaskRequest(&task, dateTaskNow)
 	if err != nil {
@@ -294,9 +435,9 @@ func (h *TaskHandler) UpdateTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	pastDay := dateTaskNow > task.Date
-
-	err = h.uc.UpdateTask(&task, pastDay)
+	// Вызов UpdateTask в UseCase
+	pastDay := dateTaskNow > task.Date    // добавляю pastDay
+	err = h.uc.UpdateTask(&task, pastDay) // передаю pastDay
 	if err != nil {
 		log.Errorf("http.UpdateTask: %+v", err)
 
@@ -447,3 +588,4 @@ func returnErr(status int, message interface{}, w http.ResponseWriter) {
 	w.WriteHeader(status)
 	_, _ = w.Write(messageJson)
 }
+*/
